@@ -21,6 +21,9 @@
   .header { padding: 32px 24px 24px; text-align: center; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #13131b 0%, var(--bg) 100%); }
   .header h1 { font-family: 'Cormorant Garamond', serif; font-size: 28px; font-weight: 600; color: var(--gold); letter-spacing: 2px; margin-bottom: 4px; }
   .header .subtitle { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); letter-spacing: 3px; text-transform: uppercase; }
+  .sync-status { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--success); margin-top: 6px; }
+  .sync-status.offline { color: var(--danger); }
+  .sync-status.syncing { color: var(--gold); }
   .nav { display: flex; justify-content: center; gap: 4px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
   .nav button { font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; padding: 8px 20px; border: none; border-radius: 20px; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text-dim); }
   .nav button:hover { color: var(--text); background: var(--surface2); }
@@ -100,10 +103,9 @@
   .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
   .text-dim { color: var(--text-dim); font-size: 12px; }
   .gap8 { gap: 8px; display: flex; flex-wrap: wrap; }
-  .warning-box { background: rgba(181,122,122,0.1); border: 1px solid var(--danger); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; font-size: 13px; color: var(--danger); }
   @media print {
     body { background: #fff; color: #000; }
-    .header, .nav, .btn, .badge-grid, .form-row, .week-label-input, .flex-between, .warning-box { display: none !important; }
+    .header, .nav, .btn, .badge-grid, .form-row, .week-label-input, .flex-between { display: none !important; }
     .main { padding: 0; }
     .atril-card { border: 1px solid #ccc; background: #fff !important; box-shadow: none !important; }
     .atril-card.front { border: 2px solid #000; }
@@ -124,12 +126,21 @@
   .edit-row input, .edit-row select { padding: 6px 10px; font-size: 13px; }
   .week-label-input { width: 100%; margin-bottom: 16px; }
   .week-label-input input { width: 100%; }
+  .loading-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; gap: 12px; }
+  .loading-overlay .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
+<div id="loading" class="loading-overlay">
+  <div class="spinner"></div>
+  <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim)">Daten werden geladen...</span>
+</div>
+
 <div class="header">
   <h1>Sitzordnung</h1>
   <div class="subtitle">Zweite Violinen</div>
+  <div class="sync-status" id="syncStatus">● Verbunden</div>
 </div>
 <div class="nav">
   <button class="active" data-view="generate" onclick="switchView('generate')">Erstellen</button>
@@ -139,24 +150,37 @@
 </div>
 <div class="main" id="app"></div>
 
-<script>
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC-OHW76NL291iSbwPgoyXuHtSRIuBfSDY",
+  authDomain: "sitzordnung-f7b92.firebaseapp.com",
+  projectId: "sitzordnung-f7b92",
+  storageBucket: "sitzordnung-f7b92.firebasestorage.app",
+  messagingSenderId: "1015573499355",
+  appId: "1:1015573499355:web:840966a1ea4e2ebc5debfe",
+  measurementId: "G-1G57JPS8RH"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const DOC_REF = doc(db, 'sitzordnung', 'main');
+
 // ═══════════════════════════════════════
 // ROLE CONFIGURATION
 // ═══════════════════════════════════════
-// Priority: lower = sits further forward
 const ROLE_PRIORITY = { stimmfuehrer: 1, stellvertreter: 2, vorspieler: 3, tutti: 4, akademist: 4, substitut: 4 };
 const ROLE_LABELS = { stimmfuehrer: 'Stimmf.', stellvertreter: 'Stellv.', vorspieler: 'Vorsp.', tutti: 'Tutti', akademist: 'Akad.', substitut: 'Subst.' };
 const ROLE_LABELS_FULL = { stimmfuehrer: 'Stimmführer/in', stellvertreter: 'Stellv. Stimmf.', vorspieler: 'Vorspieler/in', tutti: 'Tutti', akademist: 'Akademist/in', substitut: 'Substitut' };
 const ROLE_CSS = { stimmfuehrer: 'r-sf', stellvertreter: 'r-sv', vorspieler: 'r-vs', tutti: '', akademist: 'r-ak', substitut: 'r-su' };
-// Roles that have a fixed hierarchy position (fill front Pulte in order)
 const RANKED_ROLES = ['stimmfuehrer', 'stellvertreter', 'vorspieler'];
-// Roles that rotate freely
-const ROTATING_ROLES = ['tutti', 'akademist', 'substitut'];
 
 // ═══════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════
-const STORAGE_KEY = 'sitzordnung-data';
 let state = { members: [], history: [], nextId: 1 };
 let currentView = 'generate';
 let selected = new Set();
@@ -164,21 +188,70 @@ let currentSeating = null;
 let weekLabel = '';
 let expandedWeeks = new Set();
 let editingId = null;
+let editingWeekId = null;
+let saving = false;
+let loaded = false;
 
-function loadState() {
+// ═══════════════════════════════════════
+// FIREBASE SYNC
+// ═══════════════════════════════════════
+async function saveState() {
+  const statusEl = document.getElementById('syncStatus');
+  statusEl.textContent = '● Wird gespeichert...';
+  statusEl.className = 'sync-status syncing';
+  saving = true;
   try {
-    const r = localStorage.getItem(STORAGE_KEY);
-    if (r) {
-      const p = JSON.parse(r);
-      // Migrate old isLeader boolean → role
-      if (p.members) p.members.forEach(m => {
+    await setDoc(DOC_REF, { data: JSON.stringify(state) });
+    statusEl.textContent = '● Synchronisiert';
+    statusEl.className = 'sync-status';
+  } catch(e) {
+    console.error('Save error:', e);
+    statusEl.textContent = '● Speichern fehlgeschlagen';
+    statusEl.className = 'sync-status offline';
+    // Fallback to localStorage
+    try { localStorage.setItem('sitzordnung-data', JSON.stringify(state)); } catch(e2) {}
+  }
+  saving = false;
+}
+
+// Real-time listener: updates from any device appear instantly
+onSnapshot(DOC_REF, (snapshot) => {
+  if (saving) return; // ignore our own writes
+  if (snapshot.exists()) {
+    try {
+      const parsed = JSON.parse(snapshot.data().data);
+      // Migrate old format
+      if (parsed.members) parsed.members.forEach(m => {
         if (!m.role) { m.role = m.isLeader ? 'stimmfuehrer' : 'tutti'; delete m.isLeader; }
       });
-      state = { ...state, ...p };
-    }
+      state = { members: [], history: [], nextId: 1, ...parsed };
+      if (loaded) render();
+    } catch(e) { console.error('Parse error:', e); }
+  }
+  if (!loaded) {
+    loaded = true;
+    document.getElementById('loading').style.display = 'none';
+    render();
+  }
+  const statusEl = document.getElementById('syncStatus');
+  statusEl.textContent = '● Verbunden';
+  statusEl.className = 'sync-status';
+}, (error) => {
+  console.error('Firestore listener error:', error);
+  const statusEl = document.getElementById('syncStatus');
+  statusEl.textContent = '● Offline — lokale Daten';
+  statusEl.className = 'sync-status offline';
+  // Fallback: load from localStorage
+  try {
+    const r = localStorage.getItem('sitzordnung-data');
+    if (r) state = { ...state, ...JSON.parse(r) };
   } catch(e) {}
-}
-function saveState() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {} }
+  if (!loaded) {
+    loaded = true;
+    document.getElementById('loading').style.display = 'none';
+    render();
+  }
+});
 
 // ═══════════════════════════════════════
 // HELPERS
@@ -193,7 +266,13 @@ function pairKey(a, b) { return [a, b].sort((x, y) => x - y).join('-'); }
 function getRecentPairCounts(lookback = 4) {
   const counts = {};
   state.history.slice(-lookback).forEach(w => w.atriles.forEach(a => {
-    if (a.length === 2) { const k = pairKey(a[0].id, a[1].id); counts[k] = (counts[k] || 0) + 1; }
+    if (a.length >= 2) {
+      for (let i = 0; i < a.length; i++)
+        for (let j = i+1; j < a.length; j++) {
+          const k = pairKey(a[i].id, a[j].id);
+          counts[k] = (counts[k] || 0) + 1;
+        }
+    }
   }));
   return counts;
 }
@@ -205,11 +284,6 @@ function serialize(m) { return { id: m.id, code: m.code, name: m.name, role: m.r
 // ═══════════════════════════════════════
 // CORE SEATING ALGORITHM
 // ═══════════════════════════════════════
-// 1. Ranked members (SF → SV → VS) fill front Pulte in strict order, 2 per Pult
-// 2. Remaining seats filled by rotating members (Tutti, Akademist, Substitut)
-//    - Smart-paired to minimize recent pair overlap
-//    - Akademist + Substitut NEVER share a Pult
-//    - Substitut only in back half of total Pulte
 function generateSeating(ids) {
   const all = ids.map(id => state.members.find(m => m.id === id)).filter(Boolean);
   const ranked = all.filter(m => isRanked(m)).sort((a, b) => rolePriority(a) - rolePriority(b) || a.code - b.code);
@@ -220,23 +294,21 @@ function generateSeating(ids) {
 
   const totalPeople = all.length;
   const totalPulte = Math.ceil(totalPeople / 2);
-  const backHalfStart = Math.ceil(totalPulte / 2); // 0-indexed: Pulte from this index onward are "back half"
+  const backHalfStart = Math.ceil(totalPulte / 2);
 
-  // Step 1: Place ranked members into ordered slots
+  // Step 1: Ranked fill front
   const orderedSlots = [...ranked.map(m => serialize(m))];
 
-  // Step 2: Smart-pair the free-rotating members (tutti + akademist)
-  // Substituts handled separately (back half only, never with akademist)
+  // Step 2: Smart-pair tutti + akademist (no restriction between them)
   const freePool = shuffle([...tuttis, ...akademists]);
   const paired = new Set();
-  const freePairs = []; // each: [member] or [member, member]
+  const freePairs = [];
 
   for (let i = 0; i < freePool.length; i++) {
     if (paired.has(freePool[i].id)) continue;
     let bestJ = -1, bestScore = Infinity;
     for (let j = i + 1; j < freePool.length; j++) {
       if (paired.has(freePool[j].id)) continue;
-      // Akademist can pair with Tutti or other Akademist — no restriction here
       const s = pc[pairKey(freePool[i].id, freePool[j].id)] || 0;
       if (s < bestScore || (s === bestScore && Math.random() > 0.5)) { bestScore = s; bestJ = j; }
     }
@@ -248,11 +320,10 @@ function generateSeating(ids) {
     }
   }
 
-  // Flatten free pairs into a list (shuffled for variety)
   const freeOrdered = [];
   shuffle(freePairs).forEach(pair => pair.forEach(m => freeOrdered.push(serialize(m))));
 
-  // Step 3: Build Pulte from ranked + free members
+  // Step 3: Build Pulte
   const mainList = [...orderedSlots, ...freeOrdered];
   const pulte = [];
   for (let i = 0; i < mainList.length; i += 2) {
@@ -261,35 +332,24 @@ function generateSeating(ids) {
     pulte.push(pult);
   }
 
-  // Step 4: Place Substituts in the back half
-  // They pair with whoever is available in back Pulte, but NEVER with Akademist
+  // Step 4: Place Substituts in back half, never with Akademist
   const shuffledSubs = shuffle(substituts);
-
   for (const sub of shuffledSubs) {
     const subSerialized = serialize(sub);
     let placed = false;
-
-    // Try to find a back-half Pult with only 1 person that isn't an Akademist
     for (let p = Math.max(backHalfStart, 0); p < pulte.length; p++) {
       if (pulte[p].length === 1 && pulte[p][0].role !== 'akademist') {
-        // Check recent pair score
         pulte[p].push(subSerialized);
         placed = true;
         break;
       }
     }
-
-    // If no half-empty Pult, add a new one at the end
-    if (!placed) {
-      pulte.push([subSerialized]);
-    }
+    if (!placed) pulte.push([subSerialized]);
   }
 
-  // Step 5: Try to pair remaining solo Substituts with each other or solo Tuttis in back
-  // (already handled by the loop above, but let's also pair solo subs together)
+  // Step 5: Merge solo subs
   for (let p = pulte.length - 1; p >= backHalfStart; p--) {
     if (pulte[p].length === 1 && pulte[p][0].role === 'substitut') {
-      // Look for another solo sub to pair with
       for (let q = p + 1; q < pulte.length; q++) {
         if (pulte[q].length === 1 && pulte[q][0].role === 'substitut') {
           pulte[p].push(pulte[q][0]);
@@ -313,7 +373,13 @@ function switchView(v) {
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   render();
 }
-function render() { ({generate: renderGenerate, members: renderMembers, history: renderHistory, stats: renderStats})[currentView](); }
+// Expose to global scope for onclick handlers
+window.switchView = switchView;
+
+function render() {
+  if (!loaded) return;
+  ({generate: renderGenerate, members: renderMembers, history: renderHistory, stats: renderStats})[currentView]();
+}
 
 function roleIcon(role) {
   if (role === 'tutti') return '';
@@ -321,7 +387,7 @@ function roleIcon(role) {
   return ` <span class="p-role ${css}">${ROLE_LABELS[role]}</span>`;
 }
 
-function hasFrontRole(atril) { return atril.some(p => isRanked(p)); }
+function hasFrontRole(atril) { return atril.some(p => RANKED_ROLES.includes(p.role)); }
 
 function renderAtriles(atriles, printTitle) {
   let h = '';
@@ -372,12 +438,12 @@ function renderGenerate() {
   app.innerHTML = h;
 }
 
-function toggleSelect(id) { selected.has(id) ? selected.delete(id) : selected.add(id); currentSeating = null; render(); }
-function selectAll() { state.members.forEach(m => selected.add(m.id)); currentSeating = null; render(); }
-function selectNone() { selected.clear(); currentSeating = null; render(); }
-function doGenerate() { if (selected.size < 2) return; currentSeating = generateSeating([...selected]); render(); }
+window.toggleSelect = function(id) { selected.has(id) ? selected.delete(id) : selected.add(id); currentSeating = null; render(); };
+window.selectAll = function() { state.members.forEach(m => selected.add(m.id)); currentSeating = null; render(); };
+window.selectNone = function() { selected.clear(); currentSeating = null; render(); };
+window.doGenerate = function() { if (selected.size < 2) return; currentSeating = generateSeating([...selected]); render(); };
 
-function saveWeek() {
+window.saveWeek = function() {
   if (!currentSeating) return;
   state.history.push({
     id: Date.now(), date: new Date().toISOString(),
@@ -385,7 +451,7 @@ function saveWeek() {
     atriles: currentSeating, memberIds: [...selected],
   });
   saveState(); currentSeating = null; weekLabel = ''; selected.clear(); switchView('history');
-}
+};
 
 // ─── Members View ───
 function renderMembers() {
@@ -422,7 +488,7 @@ function renderMembers() {
             <option value="akademist" ${m.role==='akademist'?'selected':''}>Akademist/in</option>
             <option value="substitut" ${m.role==='substitut'?'selected':''}>Substitut</option>
           </select>
-          <button class="btn btn-gold btn-small" onclick="saveEdit(${m.id})">Speichern</button>
+          <button class="btn btn-gold btn-small" onclick="saveEditMember(${m.id})">Speichern</button>
           <button class="btn btn-outline btn-small" onclick="cancelEdit()">Abbrechen</button>
         </div></div>`;
       } else {
@@ -430,7 +496,7 @@ function renderMembers() {
           <div class="member-code ${rc}">${m.code}</div>
           <div class="member-name">${m.name}${m.role !== 'tutti' ? '<span class="role-tag ' + rc + '">' + ROLE_LABELS_FULL[m.role] + '</span>' : ''}</div>
           <div class="member-actions">
-            <button class="btn btn-outline btn-small" onclick="startEdit(${m.id})">✎</button>
+            <button class="btn btn-outline btn-small" onclick="startEditMember(${m.id})">✎</button>
             <button class="btn btn-danger btn-small" onclick="deleteMember(${m.id})">✕</button>
           </div></div>`;
       }
@@ -450,7 +516,7 @@ function renderMembers() {
   app.innerHTML = h;
 }
 
-function addMember() {
+window.addMember = function() {
   const code = parseInt(document.getElementById('newCode').value);
   const name = document.getElementById('newName').value.trim();
   const role = document.getElementById('newRole').value;
@@ -458,10 +524,10 @@ function addMember() {
   if (state.members.some(m => m.code === code)) { alert('Diese Nummer ist bereits vergeben'); return; }
   state.members.push({ id: state.nextId++, code, name, role });
   saveState(); render();
-}
-function startEdit(id) { editingId = id; render(); }
-function cancelEdit() { editingId = null; render(); }
-function saveEdit(id) {
+};
+window.startEditMember = function(id) { editingId = id; render(); };
+window.cancelEdit = function() { editingId = null; render(); };
+window.saveEditMember = function(id) {
   const code = parseInt(document.getElementById('editCode').value);
   const name = document.getElementById('editName').value.trim();
   const role = document.getElementById('editRole').value;
@@ -470,17 +536,15 @@ function saveEdit(id) {
   const m = state.members.find(m => m.id === id);
   if (m) { m.code = code; m.name = name; m.role = role; }
   editingId = null; saveState(); render();
-}
-function deleteMember(id) {
+};
+window.deleteMember = function(id) {
   const m = state.members.find(m => m.id === id);
   if (!confirm(`${m.name} wirklich entfernen?`)) return;
   state.members = state.members.filter(m => m.id !== id);
   selected.delete(id); saveState(); render();
-}
+};
 
 // ─── History View ───
-let editingWeekId = null; // which week is in edit mode
-
 function renderHistory() {
   let h = `<div class="section-title">Verlauf</div>`;
   if (!state.history.length) {
@@ -500,12 +564,10 @@ function renderHistory() {
     if (exp) {
       h += `<div class="history-body">`;
       if (isEditing) {
-        // Editable label
         h += `<div class="form-row mb12">
           <input type="text" id="editWeekLabel_${w.id}" value="${w.label}" style="flex:1" placeholder="Bezeichnung">
           <button class="btn btn-gold btn-small" onclick="saveWeekLabel(${w.id})">Speichern</button>
         </div>`;
-        // Editable Pulte
         h += `<div class="atriles-container">`;
         w.atriles.forEach((a, pi) => {
           const front = a.some(p => RANKED_ROLES.includes(p.role));
@@ -519,11 +581,9 @@ function renderHistory() {
               <button class="btn btn-danger btn-small" onclick="removeFromPult(${w.id},${pi},${mi})" title="Entfernen">✕</button>
             </div>`;
           });
-          // Add member dropdown
           h += `<div style="display:flex;gap:6px;margin-top:4px">
             <select id="addToPult_${w.id}_${pi}" style="flex:1;font-size:12px;padding:6px 8px">
               <option value="">+ Musiker hinzufügen...</option>`;
-          // Show all members not already in this Pult
           const pultIds = a.map(p => p.id);
           state.members.sort((x, y) => x.code - y.code).forEach(m => {
             if (!pultIds.includes(m.id)) {
@@ -541,7 +601,6 @@ function renderHistory() {
           <button class="btn btn-danger btn-small" onclick="deleteWeek(${w.id})">Woche löschen</button>
         </div>`;
       } else {
-        // Read-only view
         h += renderAtriles(w.atriles, false);
         h += `<div class="mt12 gap8">
           <button class="btn btn-outline btn-small" onclick="startEditWeek(${w.id})">✎ Bearbeiten</button>
@@ -556,25 +615,23 @@ function renderHistory() {
   app.innerHTML = h;
 }
 
-function toggleWeek(id) { expandedWeeks.has(id) ? expandedWeeks.delete(id) : expandedWeeks.add(id); render(); }
-function startEditWeek(id) { editingWeekId = id; render(); }
-function stopEditWeek() { editingWeekId = null; render(); }
+window.toggleWeek = function(id) { expandedWeeks.has(id) ? expandedWeeks.delete(id) : expandedWeeks.add(id); render(); };
+window.startEditWeek = function(id) { editingWeekId = id; render(); };
+window.stopEditWeek = function() { editingWeekId = null; render(); };
 
-function saveWeekLabel(weekId) {
+window.saveWeekLabel = function(weekId) {
   const w = state.history.find(w => w.id === weekId);
   const input = document.getElementById(`editWeekLabel_${weekId}`);
   if (w && input && input.value.trim()) { w.label = input.value.trim(); saveState(); render(); }
-}
+};
 
-function removeFromPult(weekId, pultIdx, memberIdx) {
+window.removeFromPult = function(weekId, pultIdx, memberIdx) {
   const w = state.history.find(w => w.id === weekId);
   if (!w) return;
   const pult = w.atriles[pultIdx];
   if (!pult || pult.length <= 1) {
-    // Last person in Pult — remove entire Pult
     if (confirm('Letzter Musiker am Pult. Gesamtes Pult entfernen?')) {
       w.atriles.splice(pultIdx, 1);
-      // Update memberIds
       w.memberIds = [...new Set(w.atriles.flat().map(p => p.id))];
       saveState(); render();
     }
@@ -583,9 +640,9 @@ function removeFromPult(weekId, pultIdx, memberIdx) {
   pult.splice(memberIdx, 1);
   w.memberIds = [...new Set(w.atriles.flat().map(p => p.id))];
   saveState(); render();
-}
+};
 
-function addToPult(weekId, pultIdx) {
+window.addToPult = function(weekId, pultIdx) {
   const select = document.getElementById(`addToPult_${weekId}_${pultIdx}`);
   if (!select || !select.value) return;
   const memberId = parseInt(select.value);
@@ -597,18 +654,18 @@ function addToPult(weekId, pultIdx) {
   if (!w.memberIds) w.memberIds = [];
   if (!w.memberIds.includes(memberId)) w.memberIds.push(memberId);
   saveState(); render();
-}
+};
 
-function deleteWeek(id) {
+window.deleteWeek = function(id) {
   if (!confirm('Diese Woche wirklich löschen?')) return;
   state.history = state.history.filter(w => w.id !== id);
   if (editingWeekId === id) editingWeekId = null;
   saveState(); render();
-}
-function clearHistory() {
+};
+window.clearHistory = function() {
   if (!confirm('Den gesamten Verlauf löschen? Dies kann nicht rückgängig gemacht werden.')) return;
   state.history = []; editingWeekId = null; saveState(); render();
-}
+};
 
 // ─── Stats View ───
 function renderStats() {
@@ -619,11 +676,12 @@ function renderStats() {
   }
   const pairings = {};
   state.history.forEach(w => w.atriles.forEach(a => {
-    if (a.length === 2) {
-      const k = pairKey(a[0].id, a[1].id);
-      if (!pairings[k]) pairings[k] = { count: 0, names: [a[0].name, a[1].name] };
-      pairings[k].count++;
-    }
+    for (let i = 0; i < a.length; i++)
+      for (let j = i+1; j < a.length; j++) {
+        const k = pairKey(a[i].id, a[j].id);
+        if (!pairings[k]) pairings[k] = { count: 0, names: [a[i].name, a[j].name] };
+        pairings[k].count++;
+      }
   }));
   const ps = Object.values(pairings).sort((a, b) => b.count - a.count);
   if (!ps.length) { h += `<div class="empty-state"><p>Noch keine Paarungsdaten</p></div>`; }
@@ -661,14 +719,14 @@ function renderStats() {
 }
 
 // ─── Export / Import ───
-function exportData() {
+window.exportData = function() {
   const b = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const u = URL.createObjectURL(b);
   const a = document.createElement('a'); a.href = u;
   a.download = `sitzordnung-backup-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(u);
-}
-function importData(e) {
+};
+window.importData = function(e) {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
   r.onload = (ev) => {
@@ -682,11 +740,8 @@ function importData(e) {
     } catch { alert('Fehler beim Lesen der Datei'); }
   };
   r.readAsText(f); e.target.value = '';
-}
+};
 
-// ─── Init ───
-loadState();
-render();
 </script>
 </body>
 </html>
