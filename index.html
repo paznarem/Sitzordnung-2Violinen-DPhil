@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sitzordnung — Segundos Violines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e14;
+    --surface: #16161f;
+    --surface2: #1e1e2a;
+    --border: #2a2a3a;
+    --gold: #c9a96e;
+    --gold-dim: #8a7348;
+    --gold-bright: #e8c87a;
+    --text: #e8e4dc;
+    --text-dim: #7a7680;
+    --text-mid: #a09ca8;
+    --accent: #4a6fa5;
+    --danger: #a35454;
+    --success: #5a8a5a;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    padding: 32px 24px 24px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #13131b 0%, var(--bg) 100%);
+  }
+  .header h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .header .subtitle {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  /* ─── Nav ─── */
+  .nav {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .nav button {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 20px;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+    color: var(--text-dim);
+  }
+  .nav button:hover { color: var(--text); background: var(--surface2); }
+  .nav button.active {
+    background: var(--gold);
+    color: var(--bg);
+    font-weight: 600;
+  }
+
+  /* ─── Main Content ─── */
+  .main { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  .section-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--gold);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ─── Forms ─── */
+  .form-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  input[type="text"], input[type="number"] {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    transition: border 0.2s;
+  }
+  input:focus { border-color: var(--gold-dim); }
+  input::placeholder { color: var(--text-dim); }
+
+  .btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .btn-gold {
+    background: var(--gold);
+    color: var(--bg);
+  }
+  .btn-gold:hover { background: var(--gold-bright); }
+  .btn-outline {
+    background: transparent;
+    color: var(--text-mid);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--text-mid); color: var(--text); }
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .btn-danger:hover { background: var(--danger); color: var(--text); }
+  .btn-small { font-size: 11px; padding: 5px 10px; }
+  .btn-success {
+    background: var(--success);
+    color: var(--text);
+  }
+
+  /* ─── Checkbox ─── */
+  .check-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-mid);
+    cursor: pointer;
+    padding: 10px 0;
+  }
+  .check-label input[type="checkbox"] {
+    accent-color: var(--gold);
+    width: 16px;
+    height: 16px;
+  }
+
+  /* ─── Member List ─── */
+  .member-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
+  .member-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: all 0.15s;
+  }
+  .member-row:hover { border-color: var(--gold-dim); }
+  .member-code {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--surface2);
+    color: var(--text-mid);
+  }
+  .member-code.leader {
+    background: var(--gold);
+    color: var(--bg);
+    font-weight: 700;
+  }
+  .member-name {
+    flex: 1;
+    font-size: 14px;
+  }
+  .member-name .leader-tag {
+    font-size: 10px;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-left: 8px;
+    font-family: 'DM Mono', monospace;
+  }
+  .member-actions { display: flex; gap: 4px; }
+
+  /* ─── Selection Badges ─── */
+  .badge-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .badge:hover { border-color: var(--gold-dim); }
+  .badge.selected {
+    border-color: var(--gold);
+    background: var(--surface2);
+    color: var(--text);
+  }
+  .badge.selected.leader {
+    background: var(--gold);
+    color: var(--bg);
+    border-color: var(--gold);
+  }
+  .badge .badge-code {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.6;
+  }
+
+  /* ─── Atril Cards ─── */
+  .atriles-container { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
+  .atril-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    animation: slideIn 0.3s ease both;
+  }
+  .atril-card.front {
+    background: linear-gradient(135deg, #1a1a2e 0%, #1e1e32 100%);
+    border-color: var(--gold-dim);
+    box-shadow: 0 4px 20px rgba(201,169,110,0.08);
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .atril-number {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--surface2);
+    color: var(--text-mid);
+  }
+  .atril-card.front .atril-number {
+    background: var(--gold);
+    color: var(--bg);
+  }
+  .atril-players {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+  .atril-player {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 14px;
+    font-size: 13px;
+    background: rgba(255,255,255,0.04);
+  }
+  .atril-card.front .atril-player { background: rgba(201,169,110,0.1); }
+  .atril-player .p-code {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    opacity: 0.5;
+  }
+  .atril-player .p-star { color: var(--gold); font-size: 10px; }
+  .atril-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    writing-mode: vertical-rl;
+    flex-shrink: 0;
+    opacity: 0.4;
+  }
+
+  /* ─── History ─── */
+  .history-week {
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--surface);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .history-header:hover { background: var(--surface2); }
+  .history-header h3 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .history-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .history-body {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .history-body .atril-card { animation: none; }
+
+  /* ─── Stats table ─── */
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 16px;
+  }
+  .stats-table th, .stats-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .stats-table th {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .stats-table tr:hover td { background: var(--surface); }
+
+  /* ─── Empty state ─── */
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .empty-state .icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    opacity: 0.3;
+  }
+
+  /* ─── Utilities ─── */
+  .mt12 { margin-top: 12px; }
+  .mt20 { margin-top: 20px; }
+  .mb12 { margin-bottom: 12px; }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  .text-dim { color: var(--text-dim); font-size: 12px; }
+  .text-gold { color: var(--gold); }
+  .gap8 { gap: 8px; display: flex; }
+
+  /* ─── Print ─── */
+  @media print {
+    body { background: #fff; color: #000; }
+    .header, .nav, .btn, .badge-grid, .form-row, .check-label { display: none !important; }
+    .main { padding: 0; }
+    .atril-card { border: 1px solid #ccc; background: #fff !important; box-shadow: none !important; }
+    .atril-card.front { border: 2px solid #000; }
+    .atril-number { background: #eee !important; color: #000 !important; }
+    .atril-card.front .atril-number { background: #000 !important; color: #fff !important; }
+    .atril-player { background: #f5f5f5 !important; }
+    .print-title { display: block !important; }
+  }
+  .print-title { display: none; font-family: 'Cormorant Garamond', serif; font-size: 22px; text-align: center; margin-bottom: 20px; }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 500px) {
+    .header h1 { font-size: 22px; }
+    .form-row { flex-direction: column; }
+    .form-row input { width: 100%; }
+    .badge { font-size: 12px; padding: 6px 10px; }
+  }
+
+  /* ─── Edit inline ─── */
+  .edit-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .edit-row input {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  /* ─── Week label input ─── */
+  .week-label-input {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+  .week-label-input input {
+    width: 100%;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Sitzordnung</h1>
+  <div class="subtitle">Segundos Violines</div>
+</div>
+
+<div class="nav" id="nav">
+  <button class="active" onclick="switchView('generate')">Generar</button>
+  <button onclick="switchView('members')">Plantilla</button>
+  <button onclick="switchView('history')">Historial</button>
+  <button onclick="switchView('stats')">Estadísticas</button>
+</div>
+
+<div class="main" id="app"></div>
+
+<script>
+// ─── State ───
+const STORAGE_KEY = 'sitzordnung-data';
+let state = {
+  members: [],
+  history: [],
+  nextId: 1,
+};
+let currentView = 'generate';
+let selected = new Set();
+let currentSeating = null;
+let weekLabel = '';
+let expandedWeeks = new Set();
+
+// ─── Persistence ───
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state = { ...state, ...parsed };
+    }
+  } catch(e) { console.error('Load failed', e); }
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch(e) { console.error('Save failed', e); }
+}
+
+// ─── Algorithm ───
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function pairKey(a, b) { return [a, b].sort((x, y) => x - y).join('-'); }
+
+function getRecentPairCounts(lookback = 4) {
+  const recent = state.history.slice(-lookback);
+  const counts = {};
+  recent.forEach(week => {
+    week.atriles.forEach(atril => {
+      if (atril.length === 2) {
+        const k = pairKey(atril[0].id, atril[1].id);
+        counts[k] = (counts[k] || 0) + 1;
+      }
+    });
+  });
+  return counts;
+}
+
+function generateSeating(selectedIds) {
+  const members = selectedIds.map(id => state.members.find(m => m.id === id)).filter(Boolean);
+  const leaders = members.filter(m => m.isLeader).sort((a, b) => a.code - b.code);
+  const others = members.filter(m => !m.isLeader);
+  const pairCounts = getRecentPairCounts();
+  const atriles = [];
+  const usedIds = new Set();
+
+  // Leaders get front atriles
+  leaders.forEach(leader => {
+    usedIds.add(leader.id);
+    // Find best partner: lowest recent pair count
+    let best = null, bestScore = Infinity;
+    for (const o of others) {
+      if (usedIds.has(o.id)) continue;
+      const score = pairCounts[pairKey(leader.id, o.id)] || 0;
+      if (score < bestScore || (score === bestScore && Math.random() > 0.5)) {
+        bestScore = score;
+        best = o;
+      }
+    }
+    if (best) {
+      usedIds.add(best.id);
+      atriles.push([
+        { id: leader.id, code: leader.code, name: leader.name, isLeader: true },
+        { id: best.id, code: best.code, name: best.name, isLeader: false }
+      ]);
+    } else {
+      atriles.push([
+        { id: leader.id, code: leader.code, name: leader.name, isLeader: true }
+      ]);
+    }
+  });
+
+  // Remaining: greedy pairing minimizing recent overlaps
+  const remaining = shuffle(others.filter(o => !usedIds.has(o.id)));
+  const paired = new Set();
+  const pairs = [];
+
+  for (let i = 0; i < remaining.length; i++) {
+    if (paired.has(remaining[i].id)) continue;
+    let bestJ = -1, bestScore = Infinity;
+    for (let j = i + 1; j < remaining.length; j++) {
+      if (paired.has(remaining[j].id)) continue;
+      const score = pairCounts[pairKey(remaining[i].id, remaining[j].id)] || 0;
+      if (score < bestScore || (score === bestScore && Math.random() > 0.5)) {
+        bestScore = score;
+        bestJ = j;
+      }
+    }
+    if (bestJ >= 0) {
+      paired.add(remaining[i].id);
+      paired.add(remaining[bestJ].id);
+      pairs.push([
+        { id: remaining[i].id, code: remaining[i].code, name: remaining[i].name, isLeader: false },
+        { id: remaining[bestJ].id, code: remaining[bestJ].code, name: remaining[bestJ].name, isLeader: false }
+      ]);
+    } else {
+      pairs.push([
+        { id: remaining[i].id, code: remaining[i].code, name: remaining[i].name, isLeader: false }
+      ]);
+    }
+  }
+
+  atriles.push(...shuffle(pairs));
+  return atriles;
+}
+
+// ─── Rendering ───
+const app = document.getElementById('app');
+
+function switchView(view) {
+  currentView = view;
+  currentSeating = null;
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b => {
+    if (b.textContent.toLowerCase().includes(
+      view === 'generate' ? 'generar' :
+      view === 'members' ? 'plantilla' :
+      view === 'history' ? 'historial' : 'estadísticas'
+    )) b.classList.add('active');
+  });
+  render();
+}
+
+function render() {
+  if (currentView === 'generate') renderGenerate();
+  else if (currentView === 'members') renderMembers();
+  else if (currentView === 'history') renderHistory();
+  else if (currentView === 'stats') renderStats();
+}
+
+// ─── Generate View ───
+function renderGenerate() {
+  if (state.members.length === 0) {
+    app.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🎻</div>
+        <p>Primero añade los miembros de la sección en <strong>Plantilla</strong></p>
+      </div>`;
+    return;
+  }
+
+  const sorted = [...state.members].sort((a, b) => a.code - b.code);
+  let html = `<div class="section-title">Selecciona quién toca esta semana</div>`;
+  html += `<div class="badge-grid">`;
+  sorted.forEach(m => {
+    const sel = selected.has(m.id);
+    const cls = sel ? (m.isLeader ? 'badge selected leader' : 'badge selected') : 'badge';
+    html += `<div class="${cls}" onclick="toggleSelect(${m.id})">
+      <span class="badge-code">${m.code}</span>${m.name}${m.isLeader ? ' <span style="font-size:10px">★</span>' : ''}
+    </div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="flex-between mb12">
+    <span class="text-dim">${selected.size} seleccionados — ${Math.ceil(selected.size / 2)} atriles</span>
+    <div class="gap8">
+      <button class="btn btn-outline btn-small" onclick="selectAll()">Todos</button>
+      <button class="btn btn-outline btn-small" onclick="selectNone()">Ninguno</button>
+    </div>
+  </div>`;
+
+  html += `<div class="week-label-input">
+    <input type="text" id="weekLabelInput" placeholder="Etiqueta (ej: Semana 12 — Mahler 5)" value="${weekLabel}" oninput="weekLabel=this.value">
+  </div>`;
+
+  html += `<button class="btn btn-gold" onclick="doGenerate()" ${selected.size < 2 ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>
+    ♪ Generar Sitzordnung
+  </button>`;
+
+  if (currentSeating) {
+    html += renderAtriles(currentSeating, true);
+    html += `<div class="mt20 gap8">
+      <button class="btn btn-gold" onclick="doGenerate()">↻ Regenerar</button>
+      <button class="btn btn-success" onclick="saveWeek()">✓ Guardar semana</button>
+      <button class="btn btn-outline" onclick="doPrint()">⎙ Imprimir</button>
+    </div>`;
+  }
+
+  app.innerHTML = html;
+}
+
+function renderAtriles(atriles, showPrintTitle) {
+  let html = '';
+  if (showPrintTitle) {
+    html += `<div class="print-title">${weekLabel || 'Sitzordnung'} — ${new Date().toLocaleDateString('es-ES')}</div>`;
+  }
+  html += `<div class="atriles-container">`;
+  atriles.forEach((atril, i) => {
+    const isFront = atril.some(p => p.isLeader);
+    html += `<div class="atril-card ${isFront ? 'front' : ''}" style="animation-delay:${i * 0.05}s">
+      <div class="atril-number">${i + 1}</div>
+      <div class="atril-players">`;
+    atril.forEach(p => {
+      html += `<div class="atril-player">
+        <span class="p-code">${p.code}</span>${p.name}${p.isLeader ? '<span class="p-star">★</span>' : ''}
+      </div>`;
+    });
+    html += `</div><div class="atril-label">atril</div></div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+function toggleSelect(id) {
+  if (selected.has(id)) selected.delete(id);
+  else selected.add(id);
+  currentSeating = null;
+  render();
+}
+function selectAll() { state.members.forEach(m => selected.add(m.id)); currentSeating = null; render(); }
+function selectNone() { selected.clear(); currentSeating = null; render(); }
+
+function doGenerate() {
+  if (selected.size < 2) return;
+  currentSeating = generateSeating([...selected]);
+  render();
+}
+
+function saveWeek() {
+  if (!currentSeating) return;
+  const entry = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    label: weekLabel || `Semana ${state.history.length + 1}`,
+    atriles: currentSeating,
+    memberIds: [...selected],
+  };
+  state.history.push(entry);
+  saveState();
+  currentSeating = null;
+  weekLabel = '';
+  selected.clear();
+  switchView('history');
+}
+
+function doPrint() { window.print(); }
+
+// ─── Members View ───
+let editingId = null;
+function renderMembers() {
+  const sorted = [...state.members].sort((a, b) => a.code - b.code);
+  let html = `<div class="section-title">Plantilla</div>`;
+
+  // Add form
+  html += `<div class="form-row">
+    <input type="number" id="newCode" placeholder="Nº" style="width:70px" min="1">
+    <input type="text" id="newName" placeholder="Nombre" style="flex:1;min-width:120px">
+    <label class="check-label" style="padding:0 8px"><input type="checkbox" id="newLeader"> Líder</label>
+    <button class="btn btn-gold" onclick="addMember()">+ Añadir</button>
+  </div>`;
+
+  if (sorted.length === 0) {
+    html += `<div class="empty-state"><div class="icon">📋</div><p>Añade miembros para empezar</p></div>`;
+  } else {
+    html += `<div class="member-list">`;
+    sorted.forEach(m => {
+      if (editingId === m.id) {
+        html += `<div class="member-row">
+          <div class="edit-row">
+            <input type="number" id="editCode" value="${m.code}" style="width:60px" min="1">
+            <input type="text" id="editName" value="${m.name}" style="flex:1;min-width:100px">
+            <label class="check-label" style="padding:0 4px"><input type="checkbox" id="editLeader" ${m.isLeader ? 'checked' : ''}> Líder</label>
+            <button class="btn btn-gold btn-small" onclick="saveEdit(${m.id})">Guardar</button>
+            <button class="btn btn-outline btn-small" onclick="cancelEdit()">Cancelar</button>
+          </div>
+        </div>`;
+      } else {
+        html += `<div class="member-row">
+          <div class="member-code ${m.isLeader ? 'leader' : ''}">${m.code}</div>
+          <div class="member-name">${m.name}${m.isLeader ? '<span class="leader-tag">Líder ★</span>' : ''}</div>
+          <div class="member-actions">
+            <button class="btn btn-outline btn-small" onclick="startEdit(${m.id})">✎</button>
+            <button class="btn btn-danger btn-small" onclick="deleteMember(${m.id})">✕</button>
+          </div>
+        </div>`;
+      }
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="mt20 gap8 flex-between">
+    <span class="text-dim">${sorted.length} miembros (${sorted.filter(m=>m.isLeader).length} líderes)</span>
+    <div class="gap8">
+      <button class="btn btn-outline btn-small" onclick="exportData()">↓ Exportar JSON</button>
+      <button class="btn btn-outline btn-small" onclick="document.getElementById('importInput').click()">↑ Importar</button>
+      <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">
+    </div>
+  </div>`;
+
+  app.innerHTML = html;
+}
+
+function addMember() {
+  const codeEl = document.getElementById('newCode');
+  const nameEl = document.getElementById('newName');
+  const leaderEl = document.getElementById('newLeader');
+  const code = parseInt(codeEl.value);
+  const name = nameEl.value.trim();
+  if (!name || isNaN(code) || code < 1) return;
+  if (state.members.some(m => m.code === code)) { alert('Ese número ya existe'); return; }
+  state.members.push({ id: state.nextId++, code, name, isLeader: leaderEl.checked });
+  saveState();
+  render();
+}
+
+function startEdit(id) { editingId = id; render(); }
+function cancelEdit() { editingId = null; render(); }
+function saveEdit(id) {
+  const code = parseInt(document.getElementById('editCode').value);
+  const name = document.getElementById('editName').value.trim();
+  const isLeader = document.getElementById('editLeader').checked;
+  if (!name || isNaN(code) || code < 1) return;
+  if (state.members.some(m => m.code === code && m.id !== id)) { alert('Ese número ya existe'); return; }
+  const m = state.members.find(m => m.id === id);
+  if (m) { m.code = code; m.name = name; m.isLeader = isLeader; }
+  editingId = null;
+  saveState();
+  render();
+}
+
+function deleteMember(id) {
+  const m = state.members.find(m => m.id === id);
+  if (!confirm(`¿Eliminar a ${m.name}?`)) return;
+  state.members = state.members.filter(m => m.id !== id);
+  selected.delete(id);
+  saveState();
+  render();
+}
+
+// ─── History View ───
+function renderHistory() {
+  let html = `<div class="section-title">Historial</div>`;
+  if (state.history.length === 0) {
+    html += `<div class="empty-state"><div class="icon">📅</div><p>Aún no hay semanas guardadas</p></div>`;
+    app.innerHTML = html;
+    return;
+  }
+
+  const reversed = [...state.history].reverse();
+  reversed.forEach(week => {
+    const date = new Date(week.date).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    const expanded = expandedWeeks.has(week.id);
+    html += `<div class="history-week">
+      <div class="history-header" onclick="toggleWeek(${week.id})">
+        <h3>${week.label}</h3>
+        <span class="history-date">${date} — ${week.atriles.length} atriles · ${week.memberIds?.length || week.atriles.flat().length} músicos ${expanded ? '▾' : '▸'}</span>
+      </div>`;
+    if (expanded) {
+      html += `<div class="history-body">`;
+      html += renderAtriles(week.atriles, false);
+      html += `<div class="mt12"><button class="btn btn-danger btn-small" onclick="deleteWeek(${week.id})">Eliminar semana</button></div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  });
+
+  if (state.history.length > 0) {
+    html += `<div class="mt20"><button class="btn btn-danger btn-small" onclick="clearHistory()">Borrar todo el historial</button></div>`;
+  }
+
+  app.innerHTML = html;
+}
+
+function toggleWeek(id) {
+  if (expandedWeeks.has(id)) expandedWeeks.delete(id);
+  else expandedWeeks.add(id);
+  render();
+}
+
+function deleteWeek(id) {
+  if (!confirm('¿Eliminar esta semana?')) return;
+  state.history = state.history.filter(w => w.id !== id);
+  saveState();
+  render();
+}
+
+function clearHistory() {
+  if (!confirm('¿Borrar TODO el historial? Esta acción no se puede deshacer.')) return;
+  state.history = [];
+  saveState();
+  render();
+}
+
+// ─── Stats View ───
+function renderStats() {
+  let html = `<div class="section-title">Estadísticas de emparejamiento</div>`;
+  if (state.history.length === 0) {
+    html += `<div class="empty-state"><div class="icon">📊</div><p>Guarda algunas semanas para ver estadísticas</p></div>`;
+    app.innerHTML = html;
+    return;
+  }
+
+  // Count all pairings
+  const pairings = {};
+  state.history.forEach(week => {
+    week.atriles.forEach(atril => {
+      if (atril.length === 2) {
+        const k = pairKey(atril[0].id, atril[1].id);
+        if (!pairings[k]) pairings[k] = { ids: [atril[0].id, atril[1].id], count: 0, names: [atril[0].name, atril[1].name] };
+        pairings[k].count++;
+      }
+    });
+  });
+
+  const sorted = Object.values(pairings).sort((a, b) => b.count - a.count);
+  if (sorted.length === 0) {
+    html += `<div class="empty-state"><p>No hay datos de emparejamiento aún</p></div>`;
+  } else {
+    html += `<p class="text-dim mb12">${state.history.length} semanas registradas · ${sorted.length} parejas distintas</p>`;
+    html += `<table class="stats-table">
+      <thead><tr><th>Pareja</th><th>Veces juntos</th><th>Frecuencia</th></tr></thead><tbody>`;
+    sorted.forEach(p => {
+      const pct = Math.round((p.count / state.history.length) * 100);
+      const bar = `<div style="width:${Math.min(pct * 2, 100)}px;height:6px;border-radius:3px;background:var(--gold);opacity:${Math.min(0.3 + pct/100, 1)}"></div>`;
+      html += `<tr>
+        <td>${p.names[0]} + ${p.names[1]}</td>
+        <td style="font-family:'DM Mono',monospace;font-size:13px">${p.count}</td>
+        <td>${bar}<span class="text-dim" style="margin-left:6px">${pct}%</span></td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  // Participation count
+  html += `<div class="section-title mt20">Participación</div>`;
+  const partCount = {};
+  state.history.forEach(week => {
+    week.atriles.flat().forEach(p => {
+      if (!partCount[p.id]) partCount[p.id] = { name: p.name, code: p.code, count: 0 };
+      partCount[p.id].count++;
+    });
+  });
+  const partSorted = Object.values(partCount).sort((a, b) => b.count - a.count);
+  html += `<table class="stats-table">
+    <thead><tr><th>Músico</th><th>Semanas</th><th></th></tr></thead><tbody>`;
+  partSorted.forEach(p => {
+    const pct = Math.round((p.count / state.history.length) * 100);
+    const bar = `<div style="width:${Math.min(pct, 100)}px;height:6px;border-radius:3px;background:var(--accent)"></div>`;
+    html += `<tr><td><span style="font-family:'DM Mono',monospace;font-size:11px;opacity:0.5;margin-right:6px">${p.code}</span>${p.name}</td>
+      <td style="font-family:'DM Mono',monospace">${p.count}/${state.history.length}</td>
+      <td>${bar}<span class="text-dim" style="margin-left:6px">${pct}%</span></td></tr>`;
+  });
+  html += `</tbody></table>`;
+
+  app.innerHTML = html;
+}
+
+// ─── Export / Import ───
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sitzordnung-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (imported.members && imported.history) {
+        if (confirm(`Importar ${imported.members.length} miembros y ${imported.history.length} semanas? Esto reemplazará los datos actuales.`)) {
+          state = imported;
+          saveState();
+          render();
+        }
+      } else {
+        alert('Formato de archivo inválido');
+      }
+    } catch { alert('Error al leer el archivo'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ─── Init ───
+loadState();
+render();
+</script>
+</body>
+</html>
