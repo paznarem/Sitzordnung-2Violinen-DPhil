@@ -347,22 +347,7 @@ function shuffle(arr) {
 }
 function pairKey(a, b) { return [a, b].sort((x, y) => x - y).join('-'); }
 
-function getRecentPairCounts(lookback = 4) {
-  const counts = {};
-  state.history.slice(-lookback).forEach(w => w.atriles.forEach(a => {
-    if (a.length >= 2) {
-      for (let i = 0; i < a.length; i++)
-        for (let j = i+1; j < a.length; j++) {
-          const k = pairKey(a[i].id, a[j].id);
-          counts[k] = (counts[k] || 0) + 1;
-        }
-    }
-  }));
-  return counts;
-}
-
 function isSpecialRole(m) { return SPECIAL_ROLES.includes(m.role); }
-
 function rolePriority(m) { return ROLE_PRIORITY[m.role] || 4; }
 function isRanked(m) { return RANKED_ROLES.includes(m.role); }
 function serialize(m) { return { id: m.id, code: m.code, name: m.name, role: m.role, pultMin: m.pultMin || 0, pultMax: m.pultMax || 0 }; }
@@ -378,120 +363,332 @@ function wunschBonus(idA, idB) {
   const b = state.members.find(m => m.id === idB);
   const aWantsB = a && a.wunsch && a.wunsch.includes(idB);
   const bWantsA = b && b.wunsch && b.wunsch.includes(idA);
-  if (aWantsB && bWantsA) return WUNSCH_BONUS; // mutual: full bonus
-  if (aWantsB || bWantsA) return WUNSCH_BONUS_HALF; // one-way: half bonus
-  return 0;
+  if (aWantsB && bWantsA) return 2; // mutual
+  if (aWantsB || bWantsA) return 1; // one-way
+  return 0; // none
 }
 
-const WUNSCH_BONUS = 8; // full bonus for mutual preferences (calibrated for ~40 projects/season)
-const WUNSCH_BONUS_HALF = 4; // half bonus for one-way preferences
-const SPECIAL_ROLES = ['akademist', 'substitut']; // roles with stricter rotation
-const SPECIAL_PENALTY_MULT = 5; // penalty multiplier for special roles
-const SPECIAL_LOOKBACK = 10; // how many weeks to look back for special roles
+const SPECIAL_ROLES = ['akademist', 'substitut'];
+const SPECIAL_PENALTY_MULT = 5;
 
 // ═══════════════════════════════════════
-// CORE SEATING ALGORITHM
+// ALGORITHM CONSTANTS (calibrated with real season data)
 // ═══════════════════════════════════════
+const COVERAGE_PRIORITY = 120;   // Coverage urgency cap (120 = good balance: ~5% 0×, uniform across season)
+const WUNSCH_BONUS_MUTUAL = 80;  // Phase 2: bonus for mutual wunschpartner
+const WUNSCH_BONUS_ONEWAY = 40;  // Phase 2: bonus for one-way wunschpartner
+const WUNSCH_ROTATION = 50;      // Phase 2: extra bonus for least-played wunschpartner
+const NW_CAP_AT1 = 200;          // Phase 2: penalty for non-wunsch already at 1×
+const NW_CAP_AT2 = 2000;         // Phase 2: huge penalty for non-wunsch already at 2×
+const BACKTOBACK_PENALTY = 50;   // Penalty for same partner in last 2 weeks
+
+// ═══════════════════════════════════════
+// FULL SEASON PAIR COUNTS
+// ═══════════════════════════════════════
+function getSeasonPairCounts() {
+  const counts = {};
+  state.history.forEach(w => w.atriles.forEach(a => {
+    if (a.length >= 2) {
+      for (let i = 0; i < a.length; i++)
+        for (let j = i+1; j < a.length; j++) {
+          const k = pairKey(a[i].id, a[j].id);
+          counts[k] = (counts[k] || 0) + 1;
+        }
+    }
+  }));
+  return counts;
+}
+
+function getRecentPairCounts(lookback = 2) {
+  const counts = {};
+  state.history.slice(-lookback).forEach(w => w.atriles.forEach(a => {
+    if (a.length >= 2) {
+      for (let i = 0; i < a.length; i++)
+        for (let j = i+1; j < a.length; j++) {
+          const k = pairKey(a[i].id, a[j].id);
+          counts[k] = (counts[k] || 0) + 1;
+        }
+    }
+  }));
+  return counts;
+}
+
+// ═══════════════════════════════════════
+// CORE SEATING ALGORITHM (Blended v3)
+// ═══════════════════════════════════════
+// Full season lookback. Coverage and Wunsch compete naturally.
+// v3: Vorspieler integrated into Wunschpartner system,
+//     fixed pairs don't overwrite, position rotation, violation warnings
+
+function getAvgPultPositions() {
+  // Calculate average pult position for each person across season history
+  const totals = {}; // id → { sum, count }
+  state.history.forEach(w => {
+    w.atriles.forEach((a, pi) => {
+      a.forEach(p => {
+        if (!totals[p.id]) totals[p.id] = { sum: 0, count: 0 };
+        totals[p.id].sum += (pi + 1);
+        totals[p.id].count += 1;
+      });
+    });
+  });
+  const avgs = {};
+  for (const id in totals) {
+    avgs[id] = totals[id].count > 0 ? totals[id].sum / totals[id].count : 0;
+  }
+  return avgs;
+}
+
+function canSharePult(mA, mB, totalPulte) {
+  // Check if two people have overlapping valid pult ranges
+  const minA = mA.pultMin || 1;
+  const maxA = mA.pultMax || totalPulte;
+  const minB = mB.pultMin || 1;
+  const maxB = mB.pultMax || totalPulte;
+  const overlapMin = Math.max(minA, minB);
+  const overlapMax = Math.min(maxA, maxB, totalPulte);
+  return overlapMin <= overlapMax;
+}
+
 function generateSeating(ids) {
   const all = ids.map(id => state.members.find(m => m.id === id)).filter(Boolean);
   const ranked = all.filter(m => isRanked(m)).sort((a, b) => rolePriority(a) - rolePriority(b) || a.code - b.code);
   const tuttis = all.filter(m => m.role === 'tutti');
   const akademists = all.filter(m => m.role === 'akademist');
   const substituts = all.filter(m => m.role === 'substitut');
-  const pc = getRecentPairCounts();
-  const pcSpecial = getRecentPairCounts(SPECIAL_LOOKBACK); // longer lookback for akademist/substitut
+  const seasonCounts = getSeasonPairCounts();
+  const recentCounts = getRecentPairCounts(2);
+  const avgPositions = getAvgPultPositions();
 
   const totalPeople = all.length;
   const totalPulte = Math.ceil(totalPeople / 2);
   const backHalfStart = Math.ceil(totalPulte / 2);
+  const rankedPulte = Math.ceil(ranked.length / 2);
+  const allTuttiIds = all.filter(m => m.role === 'tutti').map(m => m.id);
 
-  // Step 0: Handle fixedPairs — remove those people from their pools
+  // ── Step 0: Handle fixedPairs — reserve slots first ──
   const fixedIds = new Set();
-  const resolvedFixed = []; // [{pair: [ser, ser], pult: number|0}]
+  const resolvedFixed = [];
   for (const fp of fixedPairs) {
     const ma = all.find(m => m.id === fp.a);
     const mb = all.find(m => m.id === fp.b);
     if (ma && mb) {
-      fixedIds.add(fp.a);
-      fixedIds.add(fp.b);
+      fixedIds.add(fp.a); fixedIds.add(fp.b);
       resolvedFixed.push({ pair: [serialize(ma), serialize(mb)], pult: fp.pult || 0 });
     }
   }
 
-  // Remove fixed people from pools
   const rankedFiltered = ranked.filter(m => !fixedIds.has(m.id));
   const freePoolBase = [...tuttis, ...akademists].filter(m => !fixedIds.has(m.id));
   const subsFiltered = substituts.filter(m => !fixedIds.has(m.id));
 
-  // Step 1: Ranked fill front
-  const orderedSlots = [...rankedFiltered.map(m => serialize(m))];
+  // ── Step 1: Pre-allocate pulte array with reserved slots ──
+  const pulte = new Array(totalPulte).fill(null).map(() => []);
 
-  // Step 2: Smart-pair tutti + akademist with wunsch bonus and incompatibility check
-  const freePool = shuffle(freePoolBase);
+  // Place fixed pairs first — find first empty slot if no specific pult
+  for (const fp of resolvedFixed) {
+    if (fp.pult > 0) {
+      const idx = Math.min(Math.max(fp.pult - 1, 0), totalPulte - 1);
+      pulte[idx] = fp.pair;
+    } else {
+      let placed = false;
+      for (let i = rankedPulte; i < totalPulte; i++) {
+        if (pulte[i].length === 0) { pulte[i] = fp.pair; placed = true; break; }
+      }
+      if (!placed) {
+        for (let i = 0; i < totalPulte; i++) {
+          if (pulte[i].length === 0) { pulte[i] = fp.pair; break; }
+        }
+      }
+    }
+  }
+
+  // Place ranked in front (skip slots already taken by fixed pairs)
+  const rankedSer = rankedFiltered.map(m => serialize(m));
+  let ri = 0;
+  for (let pi = 0; pi < totalPulte && ri < rankedSer.length; pi++) {
+    if (pulte[pi].length > 0) continue;
+    pulte[pi].push(rankedSer[ri]);
+    ri++;
+    if (ri < rankedSer.length && pulte[pi].length < 2) {
+      pulte[pi].push(rankedSer[ri]);
+      ri++;
+    }
+  }
+
+  // ── Step 1b: Vorspieler partner matching ──
+  // Ranked members sitting alone (typically Vorspieler/Stellvertreter) get the best
+  // Tutti partner from the free pool, using the full scoring system.
+  // This integrates Vorspieler into the Wunschpartner system.
+  const usedForRanked = new Set();
+  for (let pi = 0; pi < totalPulte; pi++) {
+    if (pulte[pi].length !== 1) continue;
+    const solo = pulte[pi][0];
+    if (!isRanked(solo)) continue;
+
+    // Find best Tutti partner for this ranked member
+    let bestCand = null, bestScore = Infinity;
+    for (const m of freePoolBase) {
+      if (fixedIds.has(m.id) || usedForRanked.has(m.id)) continue;
+      if (areIncompatible(solo.id, m.id)) continue;
+      // Check pult compatibility
+      const pultNum = pi + 1;
+      const mMin = m.pultMin || 0;
+      const mMax = m.pultMax || 0;
+      if ((mMin > 0 && pultNum < mMin) || (mMax > 0 && pultNum > mMax)) continue;
+
+      const pk_ = pairKey(solo.id, m.id);
+      const seasonCount = seasonCounts[pk_] || 0;
+      let s = (recentCounts[pk_] || 0) * BACKTOBACK_PENALTY + Math.random() * 5;
+      s += seasonCount * 30;
+
+      // Wunsch bonus works for ranked↔tutti too
+      const wb = wunschBonus(solo.id, m.id);
+      if (wb > 0) {
+        let bonus = (wb === 2) ? WUNSCH_BONUS_MUTUAL : WUNSCH_BONUS_ONEWAY;
+        s -= bonus;
+      }
+
+      if (s < bestScore) { bestScore = s; bestCand = m; }
+    }
+    if (bestCand) {
+      pulte[pi].push(serialize(bestCand));
+      usedForRanked.add(bestCand.id);
+    }
+  }
+
+  // Remove Tutti used for ranked partners from free pool
+  const freePoolFiltered = freePoolBase.filter(m => !fixedIds.has(m.id) && !usedForRanked.has(m.id));
+
+  // ── Step 2: Smart-pair remaining tutti + akademist (blended scoring) ──
+  const freePool = shuffle(freePoolFiltered);
   const paired = new Set();
   const freePairs = [];
 
   for (let i = 0; i < freePool.length; i++) {
     if (paired.has(freePool[i].id)) continue;
     let bestJ = -1, bestScore = Infinity;
+
+    const pId = freePool[i].id;
+    const pIsTutti = freePool[i].role === 'tutti';
+    const pIsSpecial = isSpecialRole(freePool[i]);
+
+    const uncovered = new Set();
+    if (pIsTutti) {
+      for (const tid of allTuttiIds) {
+        if (tid === pId) continue;
+        if ((seasonCounts[pairKey(pId, tid)] || 0) === 0) uncovered.add(tid);
+      }
+    }
+
+    const pMember = state.members.find(m => m.id === pId);
+    const pWunsch = (pMember && pMember.wunsch) || [];
+    let minWunschCount = 999;
+    for (const wId of pWunsch) {
+      minWunschCount = Math.min(minWunschCount, seasonCounts[pairKey(pId, wId)] || 0);
+    }
+
     for (let j = i + 1; j < freePool.length; j++) {
       if (paired.has(freePool[j].id)) continue;
-      // Skip incompatible pairs
-      if (areIncompatible(freePool[i].id, freePool[j].id)) continue;
-      // Use stricter lookback and penalty if either is akademist/substitut
-      const eitherSpecial = isSpecialRole(freePool[i]) || isSpecialRole(freePool[j]);
-      const pairCounts = eitherSpecial ? pcSpecial : pc;
-      const penalty = eitherSpecial ? SPECIAL_PENALTY_MULT : 1;
-      let s = (pairCounts[pairKey(freePool[i].id, freePool[j].id)] || 0) * 100 * penalty;
-      s += Math.random() * (eitherSpecial ? 3 : 10);
-      // Wunschpartner bonus (graduated: mutual > one-way)
-      const wb = wunschBonus(freePool[i].id, freePool[j].id);
-      if (wb > 0) s -= wb;
+      if (areIncompatible(pId, freePool[j].id)) continue;
+
+      // FIX 1: Check pultMin/pultMax compatibility before scoring
+      if (!canSharePult(freePool[i], freePool[j], totalPulte)) continue;
+
+      const cId = freePool[j].id;
+      const cIsTutti = freePool[j].role === 'tutti';
+      const cIsSpecial = isSpecialRole(freePool[j]);
+      const eitherSpecial = pIsSpecial || cIsSpecial;
+      const pk_ = pairKey(pId, cId);
+      const seasonCount = seasonCounts[pk_] || 0;
+
+      let s = (recentCounts[pk_] || 0) * BACKTOBACK_PENALTY + Math.random() * 5;
+
+      if (eitherSpecial) {
+        s += seasonCount * 100 * SPECIAL_PENALTY_MULT;
+      } else if (pIsTutti && cIsTutti) {
+        if (uncovered.has(cId)) {
+          const urgency = Math.min(uncovered.size * 60, COVERAGE_PRIORITY);
+          s -= urgency;
+        }
+        const wb = wunschBonus(pId, cId);
+        if (wb > 0) {
+          let bonus = (wb === 2) ? WUNSCH_BONUS_MUTUAL : WUNSCH_BONUS_ONEWAY;
+          if (seasonCount === minWunschCount) bonus += WUNSCH_ROTATION;
+          s -= bonus;
+        } else {
+          if (seasonCount >= 2) s += NW_CAP_AT2;
+          else if (seasonCount >= 1) s += NW_CAP_AT1;
+        }
+        s += seasonCount * 30;
+      }
+
       if (s < bestScore) { bestScore = s; bestJ = j; }
     }
     if (bestJ >= 0) {
       paired.add(freePool[i].id); paired.add(freePool[bestJ].id);
       freePairs.push([freePool[i], freePool[bestJ]]);
     } else {
-      freePairs.push([freePool[i]]);
+      freePairs.push([freePool[i]]); // unpaired (odd number)
     }
   }
 
-  const freeOrdered = [];
-  shuffle(freePairs).forEach(pair => pair.forEach(m => freeOrdered.push(serialize(m))));
+  // ── Step 3: Position rotation — sort pairs by who has been sitting further back ──
+  // People with higher average pult position (further back) go to lower pult numbers (closer to front)
+  freePairs.sort((a, b) => {
+    const avgA = a.reduce((sum, m) => sum + (avgPositions[m.id] || totalPulte / 2), 0) / a.length;
+    const avgB = b.reduce((sum, m) => sum + (avgPositions[m.id] || totalPulte / 2), 0) / b.length;
+    return avgB - avgA; // higher avg (further back) goes first → gets front pult
+  });
 
-  // Step 3: Build Pulte from ranked + free
-  const mainList = [...orderedSlots, ...freeOrdered];
-  const pulte = [];
-  for (let i = 0; i < mainList.length; i += 2) {
-    const pult = [mainList[i]];
-    if (i + 1 < mainList.length) pult.push(mainList[i + 1]);
-    pulte.push(pult);
+  // ── Step 4: Place free pairs into available slots (respecting pultMin/pultMax) ──
+  for (const pair of freePairs) {
+    // Find best available empty slot for this pair
+    let bestSlot = -1, bestSlotScore = Infinity;
+    for (let pi = 0; pi < totalPulte; pi++) {
+      if (pulte[pi].length > 0) continue; // slot taken
+      const pultNum = pi + 1;
+      // Check pultMin/pultMax for all members of this pair
+      let valid = true;
+      for (const m of pair) {
+        const min = m.pultMin || 0;
+        const max = m.pultMax || 0;
+        if ((min > 0 && pultNum < min) || (max > 0 && pultNum > max)) { valid = false; break; }
+      }
+      if (!valid) continue;
+      // Score: prefer slot closest to what position rotation suggests
+      // (first pairs in sorted order get first empty slots naturally)
+      const score = pi; // lower = better (front)
+      if (score < bestSlotScore) { bestSlotScore = score; bestSlot = pi; }
+    }
+    if (bestSlot >= 0) {
+      pulte[bestSlot] = pair.map(m => serialize(m));
+    } else {
+      // Fallback: put in any empty slot (ignore constraints, will be fixed by swaps)
+      for (let pi = 0; pi < totalPulte; pi++) {
+        if (pulte[pi].length === 0) { pulte[bestSlot = pi] = pair.map(m => serialize(m)); break; }
+      }
+    }
   }
 
-  // Step 4: Place Substituts — back half, never with Akademist, check incompatibility
-  // Use stricter rotation: prefer Pult partner with least recent overlap
+  // ── Step 5: Place Substituts — back half, best rotation, never with Akademist ──
   const shuffledSubs = shuffle(subsFiltered);
   for (const sub of shuffledSubs) {
     const subSer = serialize(sub);
-    let placed = false;
     let bestP = -1, bestScore = Infinity;
     for (let p = Math.max(backHalfStart, 0); p < pulte.length; p++) {
       if (pulte[p].length === 1 &&
           pulte[p][0].role !== 'akademist' &&
           !areIncompatible(sub.id, pulte[p][0].id)) {
-        const score = (pcSpecial[pairKey(sub.id, pulte[p][0].id)] || 0) * SPECIAL_PENALTY_MULT + Math.random() * 2;
+        const score = (seasonCounts[pairKey(sub.id, pulte[p][0].id)] || 0) * 100 * SPECIAL_PENALTY_MULT + Math.random() * 2;
         if (score < bestScore) { bestScore = score; bestP = p; }
       }
     }
-    if (bestP >= 0) {
-      pulte[bestP].push(subSer);
-      placed = true;
-    }
-    if (!placed) pulte.push([subSer]);
+    if (bestP >= 0) { pulte[bestP].push(subSer); }
+    else { pulte.push([subSer]); }
   }
 
-  // Step 5: Merge solo subs
+  // Merge solo subs
   for (let p = pulte.length - 1; p >= backHalfStart; p--) {
     if (pulte[p].length === 1 && pulte[p][0].role === 'substitut') {
       for (let q = p + 1; q < pulte.length; q++) {
@@ -505,25 +702,11 @@ function generateSeating(ids) {
     }
   }
 
-  // Step 6: Insert fixed pairs
-  for (const fp of resolvedFixed) {
-    if (fp.pult > 0 && fp.pult <= pulte.length + 1) {
-      // Insert at specific position
-      pulte.splice(fp.pult - 1, 0, fp.pair);
-    } else {
-      // Insert after ranked section
-      const afterRanked = Math.ceil(rankedFiltered.length / 2);
-      const insertIdx = Math.min(afterRanked, pulte.length);
-      pulte.splice(insertIdx, 0, fp.pair);
-    }
-  }
-
-  // Step 7: Fix pultMin/pultMax violations + incompatibility violations by swapping
+  // ── Step 6: Fix remaining violations by swapping ──
   const MAX_SWAPS = 80;
   for (let attempt = 0; attempt < MAX_SWAPS; attempt++) {
     let violation = null;
     for (let pi = 0; pi < pulte.length; pi++) {
-      // Check pult constraints
       for (const person of pulte[pi]) {
         const pultNum = pi + 1;
         const min = person.pultMin || 0;
@@ -534,7 +717,6 @@ function generateSeating(ids) {
         }
       }
       if (violation) break;
-      // Check incompatibility within pult
       if (pulte[pi].length >= 2) {
         for (let a = 0; a < pulte[pi].length; a++) {
           for (let b = a + 1; b < pulte[pi].length; b++) {
@@ -562,22 +744,18 @@ function generateSeating(ids) {
       for (let mi = 0; mi < pulte[ti].length; mi++) {
         const cand = pulte[ti][mi];
         if (isRanked(cand)) continue;
-        // Check candidate constraints at badPi
         const candMin = cand.pultMin || 0;
         const candMax = cand.pultMax || 0;
         const badNum = badPi + 1;
         if ((candMin > 0 && badNum < candMin) || (candMax > 0 && badNum > candMax)) continue;
-        // Check incompatibilities
         const badOthers = pulte[badPi].filter(p => p.id !== badPerson.id);
         if (badOthers.some(p => areIncompatible(cand.id, p.id))) continue;
         const tiOthers = pulte[ti].filter(p => p.id !== cand.id);
         if (tiOthers.some(p => areIncompatible(badPerson.id, p.id))) continue;
-        // Check akademist+substitut
         if (cand.role === 'substitut' && badOthers.some(p => p.role === 'akademist')) continue;
         if (cand.role === 'akademist' && badOthers.some(p => p.role === 'substitut')) continue;
         if (badPerson.role === 'substitut' && tiOthers.some(p => p.role === 'akademist')) continue;
         if (badPerson.role === 'akademist' && tiOthers.some(p => p.role === 'substitut')) continue;
-        // Swap
         const badIdx = pulte[badPi].findIndex(p => p.id === badPerson.id);
         pulte[badPi][badIdx] = cand;
         pulte[ti][mi] = badPerson;
@@ -588,7 +766,33 @@ function generateSeating(ids) {
     if (!swapped) break;
   }
 
-  return pulte;
+  // FIX 3: Check for remaining violations and warn
+  const warnings = [];
+  for (let pi = 0; pi < pulte.length; pi++) {
+    for (const person of pulte[pi]) {
+      const pultNum = pi + 1;
+      const min = person.pultMin || 0;
+      const max = person.pultMax || 0;
+      if ((min > 0 && pultNum < min) || (max > 0 && pultNum > max)) {
+        warnings.push(`${person.name}: Pult ${pultNum} (erlaubt: ${min||1}–${max||'∞'})`);
+      }
+    }
+    if (pulte[pi].length >= 2) {
+      for (let a = 0; a < pulte[pi].length; a++) {
+        for (let b = a + 1; b < pulte[pi].length; b++) {
+          if (areIncompatible(pulte[pi][a].id, pulte[pi][b].id)) {
+            warnings.push(`${pulte[pi][a].name} + ${pulte[pi][b].name}: Unverträglichkeit am Pult ${pi+1}`);
+          }
+        }
+      }
+    }
+  }
+  if (warnings.length > 0) {
+    alert('⚠ Einige Einschränkungen konnten nicht erfüllt werden:\n\n' + warnings.join('\n'));
+  }
+
+  // Remove empty slots (can happen if odd number)
+  return pulte.filter(p => p.length > 0);
 }
 
 // ═══════════════════════════════════════
