@@ -200,7 +200,7 @@ let loaded = false;
 // ═══════════════════════════════════════
 // ADMIN MODE
 // ═══════════════════════════════════════
-const ADMIN_HASH = '5a4d2f322e566c2e445068696c213f'; // hashed password
+const ADMIN_HASH = '2f312f322e566c2e445068696c213f'; // hashed password
 function hashPw(pw) { return Array.from(pw).map(c => c.charCodeAt(0).toString(16).padStart(2,'0')).join(''); }
 let isAdmin = localStorage.getItem('sitzordnung-admin') === ADMIN_HASH;
 
