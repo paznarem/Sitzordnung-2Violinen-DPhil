@@ -132,6 +132,17 @@
 </style>
 </head>
 <body>
+<div id="loginGate" class="loading-overlay" style="flex-direction:column;gap:16px">
+  <div style="font-family:'Cormorant Garamond',serif;font-size:24px;color:var(--gold)">Sitzordnung</div>
+  <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:3px;text-transform:uppercase">Zweite Violinen</div>
+  <div style="margin-top:16px;display:flex;gap:8px">
+    <input type="password" id="gatePassword" placeholder="Passwort" style="font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);outline:none;width:200px;text-align:center" onkeydown="if(event.key==='Enter')checkGate()">
+    <button onclick="checkGate()" style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:10px 18px;border:none;border-radius:var(--radius);cursor:pointer;background:var(--gold);color:var(--bg)">→</button>
+  </div>
+  <div id="gateError" style="font-size:12px;color:var(--danger);display:none">Falsches Passwort</div>
+</div>
+
+<div id="mainApp" style="display:none">
 <div id="loading" class="loading-overlay">
   <div class="spinner"></div>
   <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim)">Daten werden geladen...</span>
@@ -151,6 +162,34 @@
   <button data-view="stats" onclick="switchView('stats')">Statistik</button>
 </div>
 <div class="main" id="app"></div>
+</div><!-- end mainApp -->
+
+<!-- Gate check (runs before Firebase module) -->
+<script>
+const GATE_HASH = '322e56696f6c696e656e'; // "2.Violinen"
+function gateHash(pw) { return Array.from(pw).map(c => c.charCodeAt(0).toString(16).padStart(2,'0')).join(''); }
+
+function checkGate() {
+  const pw = document.getElementById('gatePassword').value;
+  if (gateHash(pw) === GATE_HASH) {
+    localStorage.setItem('sitzordnung-gate', GATE_HASH);
+    showApp();
+  } else {
+    document.getElementById('gateError').style.display = 'block';
+    document.getElementById('gatePassword').value = '';
+  }
+}
+
+function showApp() {
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+}
+
+// Check if already authenticated
+if (localStorage.getItem('sitzordnung-gate') === GATE_HASH) {
+  showApp();
+}
+</script>
 
 <!-- Firebase -->
 <script type="module">
@@ -1202,80 +1241,132 @@ window.searchPartner = function() {
 };
 
 // ─── Image Export ───
-// Dynamically load html2canvas
 let h2cLoaded = false;
 function loadH2C() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (h2cLoaded) { resolve(); return; }
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
     s.onload = () => { h2cLoaded = true; resolve(); };
-    s.onerror = () => { alert('Bibliothek konnte nicht geladen werden. Bitte Internetverbindung prüfen.'); };
+    s.onerror = () => { reject(new Error('html2canvas konnte nicht geladen werden')); };
     document.head.appendChild(s);
   });
 }
 
-async function captureElement(el, filename) {
-  await loadH2C();
+function buildExportDiv(title, atriles, notes) {
+  // Build a self-contained div with inline styles (no CSS variables)
+  const bg = '#0e0e14'; const gold = '#c9a96e'; const surface = '#16161f';
+  const border = '#2a2a3a'; const text = '#e8e4dc'; const textDim = '#7a7680';
+  const frontBg = '#1a1a2e'; const clrSf = '#c9a96e'; const clrSv = '#7a9fb5';
+  const clrVs = '#9a7ab5'; const clrAk = '#6ab58a'; const clrSu = '#b57a7a';
+  const roleColors = { stimmfuehrer: clrSf, stellvertreter: clrSv, vorspieler: clrVs, akademist: clrAk, substitut: clrSu };
+
+  let html = `<div style="padding:24px 20px;background:${bg};font-family:'DM Sans',Helvetica,Arial,sans-serif;width:600px">`;
+  // Title
+  html += `<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;color:${gold};text-align:center;margin-bottom:4px">${title}</div>`;
+  html += `<div style="font-family:'DM Mono',monospace;font-size:10px;color:${textDim};text-align:center;letter-spacing:2px;margin-bottom:20px">ZWEITE VIOLINEN</div>`;
+  // Atriles
+  atriles.forEach((a, i) => {
+    const hasFront = a.some(p => ['stimmfuehrer','stellvertreter','vorspieler'].includes(p.role));
+    const cardBg = hasFront ? frontBg : surface;
+    const cardBorder = hasFront ? gold : border;
+    const numBg = hasFront ? gold : '#1e1e2a';
+    const numColor = hasFront ? bg : textDim;
+    html += `<div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:8px;background:${cardBg};border:1px solid ${cardBorder};margin-bottom:8px">`;
+    html += `<div style="font-family:'DM Mono',monospace;font-size:14px;font-weight:700;width:32px;height:32px;border-radius:8px;background:${numBg};color:${numColor};display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div>`;
+    html += `<div style="display:flex;gap:8px;flex:1;flex-wrap:wrap">`;
+    a.forEach(p => {
+      const role = p.role || 'tutti';
+      const roleColor = roleColors[role];
+      html += `<div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:14px;font-size:13px;background:rgba(255,255,255,0.04);color:${text}">`;
+      html += `<span style="font-family:'DM Mono',monospace;font-size:10px;opacity:0.5">${p.code}</span>`;
+      html += `${p.name}`;
+      if (role !== 'tutti' && roleColor) {
+        html += ` <span style="font-size:9px;font-family:'DM Mono',monospace;color:${roleColor}">${ROLE_LABELS[role]}</span>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+    html += `<div style="font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:${textDim};writing-mode:vertical-rl;opacity:0.4;flex-shrink:0">Pult</div>`;
+    html += `</div>`;
+  });
+  // Notes
+  if (notes) {
+    html += `<div style="margin-top:8px;padding:8px 12px;background:#1e1e2a;border-radius:8px;font-size:12px;color:${textDim};white-space:pre-wrap">📝 ${notes}</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function exportAsImage(title, atriles, notes, filename) {
   try {
-    const canvas = await html2canvas(el, {
+    await loadH2C();
+  } catch(e) {
+    alert(e.message);
+    return;
+  }
+  // Create offscreen container
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1';
+  container.innerHTML = buildExportDiv(title, atriles, notes);
+  document.body.appendChild(container);
+  const target = container.firstChild;
+
+  try {
+    // Wait a tick for fonts/layout
+    await new Promise(r => setTimeout(r, 100));
+    const canvas = await html2canvas(target, {
       backgroundColor: '#0e0e14',
       scale: 2,
-      useCORS: true,
+      logging: false,
+      width: target.scrollWidth,
+      height: target.scrollHeight,
+      windowWidth: target.scrollWidth,
+      windowHeight: target.scrollHeight,
     });
+    document.body.removeChild(container);
+
     canvas.toBlob(blob => {
-      if (!blob) return;
+      if (!blob) { alert('Bild konnte nicht erstellt werden'); return; }
+      const file = new File([blob], filename, { type: 'image/png' });
       // Try native share (mobile)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'image/png' })] })) {
-        navigator.share({
-          files: [new File([blob], filename, { type: 'image/png' })],
-          title: 'Sitzordnung',
-        }).catch(() => {});
-      } else {
-        // Fallback: download
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = filename;
-        a.click(); URL.revokeObjectURL(url);
+      if (navigator.share && navigator.canShare) {
+        try {
+          if (navigator.canShare({ files: [file] })) {
+            navigator.share({ files: [file], title: 'Sitzordnung' }).catch(() => {
+              downloadBlob(blob, filename);
+            });
+            return;
+          }
+        } catch(e) {}
       }
+      downloadBlob(blob, filename);
     }, 'image/png');
-  } catch(e) { alert('Fehler beim Erstellen des Bildes: ' + e.message); }
+  } catch(e) {
+    document.body.removeChild(container);
+    alert('Fehler: ' + e.message);
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 window.exportImage = function() {
-  // Export current seating from generate view
-  const container = document.querySelector('.atriles-container');
-  if (!container) return;
-  // Wrap with title for context
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'padding:20px;background:#0e0e14';
-  const title = document.createElement('div');
-  title.style.cssText = 'font-family:Cormorant Garamond,serif;font-size:22px;color:#c9a96e;text-align:center;margin-bottom:16px';
-  title.textContent = (weekLabel || 'Sitzordnung') + ' — ' + new Date().toLocaleDateString('de-DE');
-  wrapper.appendChild(title);
-  wrapper.appendChild(container.cloneNode(true));
-  document.body.appendChild(wrapper);
-  captureElement(wrapper, `sitzordnung-${new Date().toISOString().slice(0,10)}.png`).then(() => {
-    document.body.removeChild(wrapper);
-  });
+  if (!currentSeating) return;
+  const title = (weekLabel || 'Sitzordnung') + ' — ' + new Date().toLocaleDateString('de-DE');
+  exportAsImage(title, currentSeating, weekNotes, `sitzordnung-${new Date().toISOString().slice(0,10)}.png`);
 };
 
 window.exportWeekImage = function(weekId) {
-  const el = document.getElementById(`weekExport_${weekId}`);
-  if (!el) return;
   const w = state.history.find(w => w.id === weekId);
-  // Wrap with title
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'padding:20px;background:#0e0e14';
-  const title = document.createElement('div');
-  title.style.cssText = 'font-family:Cormorant Garamond,serif;font-size:22px;color:#c9a96e;text-align:center;margin-bottom:16px';
-  title.textContent = (w ? w.label : 'Sitzordnung') + ' — ' + (w ? new Date(w.date).toLocaleDateString('de-DE') : '');
-  wrapper.appendChild(title);
-  wrapper.appendChild(el.cloneNode(true));
-  document.body.appendChild(wrapper);
-  captureElement(wrapper, `sitzordnung-${w ? w.label.replace(/\s/g,'_') : 'export'}.png`).then(() => {
-    document.body.removeChild(wrapper);
-  });
+  if (!w) return;
+  const title = w.label + ' — ' + new Date(w.date).toLocaleDateString('de-DE');
+  exportAsImage(title, w.atriles, w.notes, `sitzordnung-${w.label.replace(/[^a-zA-Z0-9]/g,'_')}.png`);
 };
 
 // ─── Export / Import ───
