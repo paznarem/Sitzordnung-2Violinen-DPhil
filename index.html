@@ -223,6 +223,8 @@ onSnapshot(DOC_REF, (snapshot) => {
       // Migrate old format
       if (parsed.members) parsed.members.forEach(m => {
         if (!m.role) { m.role = m.isLeader ? 'stimmfuehrer' : 'tutti'; delete m.isLeader; }
+        if (m.pultMin === undefined) m.pultMin = 0;
+        if (m.pultMax === undefined) m.pultMax = 0;
       });
       state = { members: [], history: [], nextId: 1, ...parsed };
       if (loaded) render();
@@ -279,11 +281,16 @@ function getRecentPairCounts(lookback = 4) {
 
 function rolePriority(m) { return ROLE_PRIORITY[m.role] || 4; }
 function isRanked(m) { return RANKED_ROLES.includes(m.role); }
-function serialize(m) { return { id: m.id, code: m.code, name: m.name, role: m.role }; }
+function serialize(m) { return { id: m.id, code: m.code, name: m.name, role: m.role, pultMin: m.pultMin || 0, pultMax: m.pultMax || 0 }; }
 
 // ═══════════════════════════════════════
 // CORE SEATING ALGORITHM
 // ═══════════════════════════════════════
+// 1. Ranked (SF→SV→VS) fill front Pulte in order, 2 per Pult
+// 2. Tutti+Akademist smart-paired minimizing recent overlaps
+// 3. Substitut: back half only, never with Akademist
+// 4. pultMin/pultMax per member respected (0 = no restriction)
+// 5. After initial placement, swap to fix constraint violations
 function generateSeating(ids) {
   const all = ids.map(id => state.members.find(m => m.id === id)).filter(Boolean);
   const ranked = all.filter(m => isRanked(m)).sort((a, b) => rolePriority(a) - rolePriority(b) || a.code - b.code);
@@ -299,7 +306,7 @@ function generateSeating(ids) {
   // Step 1: Ranked fill front
   const orderedSlots = [...ranked.map(m => serialize(m))];
 
-  // Step 2: Smart-pair tutti + akademist (no restriction between them)
+  // Step 2: Smart-pair tutti + akademist
   const freePool = shuffle([...tuttis, ...akademists]);
   const paired = new Set();
   const freePairs = [];
@@ -358,6 +365,61 @@ function generateSeating(ids) {
         }
       }
     }
+  }
+
+  // Step 6: Fix pultMin/pultMax violations by swapping
+  // pultMin/pultMax are 1-indexed (Pult 1 = index 0). 0 = no restriction.
+  const MAX_SWAPS = 50;
+  for (let attempt = 0; attempt < MAX_SWAPS; attempt++) {
+    let violation = null;
+    // Find first violation
+    for (let pi = 0; pi < pulte.length; pi++) {
+      for (const person of pulte[pi]) {
+        const pultNum = pi + 1; // 1-indexed
+        const min = person.pultMin || 0;
+        const max = person.pultMax || 0;
+        if ((min > 0 && pultNum < min) || (max > 0 && pultNum > max)) {
+          violation = { pi, person, min, max };
+          break;
+        }
+      }
+      if (violation) break;
+    }
+    if (!violation) break; // all good
+
+    // Find a non-ranked person in a valid Pult to swap with
+    const { pi: badPi, person: badPerson, min, max } = violation;
+    const targetMin = min > 0 ? min - 1 : 0; // convert to 0-indexed
+    const targetMax = max > 0 ? max - 1 : pulte.length - 1;
+    let swapped = false;
+
+    for (let ti = targetMin; ti <= targetMax && !swapped; ti++) {
+      if (ti === badPi) continue;
+      for (let mi = 0; mi < pulte[ti].length; mi++) {
+        const candidate = pulte[ti][mi];
+        // Don't swap ranked members out of their positions
+        if (isRanked(candidate)) continue;
+        // Check candidate wouldn't violate their own constraints at badPi
+        const candMin = candidate.pultMin || 0;
+        const candMax = candidate.pultMax || 0;
+        const badPultNum = badPi + 1;
+        if ((candMin > 0 && badPultNum < candMin) || (candMax > 0 && badPultNum > candMax)) continue;
+        // Check akademist+substitut rule
+        const badPultOthers = pulte[badPi].filter(p => p.id !== badPerson.id);
+        if (candidate.role === 'substitut' && badPultOthers.some(p => p.role === 'akademist')) continue;
+        if (candidate.role === 'akademist' && badPultOthers.some(p => p.role === 'substitut')) continue;
+        const tiOthers = pulte[ti].filter(p => p.id !== candidate.id);
+        if (badPerson.role === 'substitut' && tiOthers.some(p => p.role === 'akademist')) continue;
+        if (badPerson.role === 'akademist' && tiOthers.some(p => p.role === 'substitut')) continue;
+        // Do the swap
+        const badIdx = pulte[badPi].findIndex(p => p.id === badPerson.id);
+        pulte[badPi][badIdx] = candidate;
+        pulte[ti][mi] = badPerson;
+        swapped = true;
+        break;
+      }
+    }
+    if (!swapped) break; // can't fix this one, stop trying
   }
 
   return pulte;
@@ -468,6 +530,8 @@ function renderMembers() {
         <option value="akademist">Akademist/in</option>
         <option value="substitut">Substitut</option>
       </select>
+      <input type="number" id="newPultMin" placeholder="Pult min" style="width:80px" min="0" title="Frühestes Pult (0 = keine Einschränkung)">
+      <input type="number" id="newPultMax" placeholder="Pult max" style="width:80px" min="0" title="Spätestes Pult (0 = keine Einschränkung)">
       <button class="btn btn-gold" onclick="addMember()">+ Hinzufügen</button>
     </div>`;
   if (!sorted.length) {
@@ -488,13 +552,15 @@ function renderMembers() {
             <option value="akademist" ${m.role==='akademist'?'selected':''}>Akademist/in</option>
             <option value="substitut" ${m.role==='substitut'?'selected':''}>Substitut</option>
           </select>
+          <input type="number" id="editPultMin" value="${m.pultMin || 0}" style="width:65px" min="0" title="Pult min">
+          <input type="number" id="editPultMax" value="${m.pultMax || 0}" style="width:65px" min="0" title="Pult max">
           <button class="btn btn-gold btn-small" onclick="saveEditMember(${m.id})">Speichern</button>
           <button class="btn btn-outline btn-small" onclick="cancelEdit()">Abbrechen</button>
         </div></div>`;
       } else {
         h += `<div class="member-row">
           <div class="member-code ${rc}">${m.code}</div>
-          <div class="member-name">${m.name}${m.role !== 'tutti' ? '<span class="role-tag ' + rc + '">' + ROLE_LABELS_FULL[m.role] + '</span>' : ''}</div>
+          <div class="member-name">${m.name}${m.role !== 'tutti' ? '<span class="role-tag ' + rc + '">' + ROLE_LABELS_FULL[m.role] + '</span>' : ''}${(m.pultMin > 0 || m.pultMax > 0) ? '<span class="text-dim" style="margin-left:8px;font-size:10px">Pult ' + (m.pultMin || '1') + '–' + (m.pultMax || '∞') + '</span>' : ''}</div>
           <div class="member-actions">
             <button class="btn btn-outline btn-small" onclick="startEditMember(${m.id})">✎</button>
             <button class="btn btn-danger btn-small" onclick="deleteMember(${m.id})">✕</button>
@@ -520,9 +586,11 @@ window.addMember = function() {
   const code = parseInt(document.getElementById('newCode').value);
   const name = document.getElementById('newName').value.trim();
   const role = document.getElementById('newRole').value;
+  const pultMin = parseInt(document.getElementById('newPultMin').value) || 0;
+  const pultMax = parseInt(document.getElementById('newPultMax').value) || 0;
   if (!name || isNaN(code) || code < 1) return;
   if (state.members.some(m => m.code === code)) { alert('Diese Nummer ist bereits vergeben'); return; }
-  state.members.push({ id: state.nextId++, code, name, role });
+  state.members.push({ id: state.nextId++, code, name, role, pultMin, pultMax });
   saveState(); render();
 };
 window.startEditMember = function(id) { editingId = id; render(); };
@@ -531,10 +599,12 @@ window.saveEditMember = function(id) {
   const code = parseInt(document.getElementById('editCode').value);
   const name = document.getElementById('editName').value.trim();
   const role = document.getElementById('editRole').value;
+  const pultMin = parseInt(document.getElementById('editPultMin').value) || 0;
+  const pultMax = parseInt(document.getElementById('editPultMax').value) || 0;
   if (!name || isNaN(code) || code < 1) return;
   if (state.members.some(m => m.code === code && m.id !== id)) { alert('Diese Nummer ist bereits vergeben'); return; }
   const m = state.members.find(m => m.id === id);
-  if (m) { m.code = code; m.name = name; m.role = role; }
+  if (m) { m.code = code; m.name = name; m.role = role; m.pultMin = pultMin; m.pultMax = pultMax; }
   editingId = null; saveState(); render();
 };
 window.deleteMember = function(id) {
