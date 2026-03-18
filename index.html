@@ -926,7 +926,31 @@ function renderGenerate() {
 window.toggleSelect = function(id) { selected.has(id) ? selected.delete(id) : selected.add(id); currentSeating = null; fixedPairs = fixedPairs.filter(fp => selected.has(fp.a) && selected.has(fp.b)); render(); };
 window.selectAll = function() { state.members.forEach(m => selected.add(m.id)); currentSeating = null; render(); };
 window.selectNone = function() { selected.clear(); currentSeating = null; fixedPairs = []; render(); };
-window.doGenerate = function() { if (selected.size < 2) return; currentSeating = generateSeating([...selected]); render(); };
+window.doGenerate = function() {
+  if (selected.size < 2) return;
+  // Run algorithm multiple times, pick best result (most Wunschpartner matches)
+  const TRIES = 10;
+  let bestSeating = null, bestScore = -1;
+  for (let t = 0; t < TRIES; t++) {
+    const candidate = generateSeating([...selected]);
+    // Score: count how many Wunschpartner pairs were satisfied
+    let score = 0;
+    candidate.forEach(pult => {
+      if (pult.length >= 2) {
+        for (let i = 0; i < pult.length; i++) {
+          for (let j = i + 1; j < pult.length; j++) {
+            const wb = wunschBonus(pult[i].id, pult[j].id);
+            if (wb === 2) score += 3;      // mutual: high value
+            else if (wb === 1) score += 1;  // one-way: some value
+          }
+        }
+      }
+    });
+    if (score > bestScore) { bestScore = score; bestSeating = candidate; }
+  }
+  currentSeating = bestSeating;
+  render();
+};
 
 window.addFixedPair = function() {
   const a = parseInt(document.getElementById('fixA').value);
