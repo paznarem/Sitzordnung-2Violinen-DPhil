@@ -671,12 +671,14 @@ function generateSeating(ids) {
     }
   }
 
-  // ── Step 5: Place Substituts — back half, best rotation, never with Akademist ──
+  // ── Step 5: Place Substituts — back half, NOT last pult, best rotation, never with Akademist ──
+  const lastPultIdx = pulte.length - 1;
   const shuffledSubs = shuffle(subsFiltered);
   for (const sub of shuffledSubs) {
     const subSer = serialize(sub);
     let bestP = -1, bestScore = Infinity;
     for (let p = Math.max(backHalfStart, 0); p < pulte.length; p++) {
+      if (p === lastPultIdx) continue; // never last pult
       if (pulte[p].length === 1 &&
           pulte[p][0].role !== 'akademist' &&
           !areIncompatible(sub.id, pulte[p][0].id)) {
@@ -684,8 +686,25 @@ function generateSeating(ids) {
         if (score < bestScore) { bestScore = score; bestP = p; }
       }
     }
+    // Fallback: try any slot with length 1 (except last pult)
+    if (bestP < 0) {
+      for (let p = 0; p < pulte.length; p++) {
+        if (p === lastPultIdx) continue;
+        if (pulte[p].length === 1 &&
+            pulte[p][0].role !== 'akademist' &&
+            !areIncompatible(sub.id, pulte[p][0].id)) {
+          bestP = p; break;
+        }
+      }
+    }
     if (bestP >= 0) { pulte[bestP].push(subSer); }
-    else { pulte.push([subSer]); }
+    // If truly no slot found, place in back half anyway (but never create extra Pult)
+    else {
+      for (let p = Math.max(backHalfStart, 0); p < pulte.length; p++) {
+        if (p === lastPultIdx) continue;
+        if (pulte[p].length < 2) { pulte[p].push(subSer); break; }
+      }
+    }
   }
 
   // Merge solo subs
@@ -697,6 +716,31 @@ function generateSeating(ids) {
           pulte[p].push(pulte[q][0]);
           pulte.splice(q, 1);
           break;
+        }
+      }
+    }
+  }
+
+  // ── Step 5b: Ensure Akademist is NOT in last pult ──
+  for (let pi = 0; pi < pulte.length; pi++) {
+    if (pi !== pulte.length - 1) continue;
+    for (let mi = 0; mi < pulte[pi].length; mi++) {
+      if (pulte[pi][mi].role === 'akademist') {
+        // Swap with someone from a non-last pult
+        let swapped = false;
+        for (let ti = 0; ti < pulte.length - 1 && !swapped; ti++) {
+          for (let tmi = 0; tmi < pulte[ti].length; tmi++) {
+            const cand = pulte[ti][tmi];
+            if (isRanked(cand)) continue;
+            if (cand.role === 'substitut' || cand.role === 'akademist') continue;
+            if (areIncompatible(pulte[pi][mi].id, pulte[ti].filter(p => p.id !== cand.id).map(p => p.id)[0])) continue;
+            // Swap
+            const akad = pulte[pi][mi];
+            pulte[pi][mi] = cand;
+            pulte[ti][tmi] = akad;
+            swapped = true;
+            break;
+          }
         }
       }
     }
@@ -875,7 +919,7 @@ function renderGenerate() {
       <button class="btn btn-outline btn-small" onclick="selectAll()">Alle</button>
       <button class="btn btn-outline btn-small" onclick="selectNone()">Keine</button>
     </div></div>`;
-  h += `<div class="week-label-input"><input type="text" id="weekLabelInput" placeholder="Bezeichnung (z.B. KW 12 — Mahler 5)" value="${weekLabel}" oninput="weekLabel=this.value"></div>`;
+  h += `<div class="week-label-input"><input type="text" id="weekLabelInput" placeholder="Bezeichnung (z.B. KW 12 — Mahler 5)" value="${weekLabel}" oninput="setWeekLabel(this.value)"></div>`;
 
   // Fixed pairs UI
   const selArr = [...selected];
@@ -913,7 +957,7 @@ function renderGenerate() {
   h += `<button class="btn btn-gold" onclick="doGenerate()" ${selected.size < 2 ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>♪ Sitzordnung erstellen</button>`;
   if (currentSeating) {
     h += renderAtriles(currentSeating, true);
-    h += `<div style="margin-top:12px"><textarea id="weekNotes" placeholder="Anmerkungen (optional)..." style="width:100%;font-family:'DM Sans',sans-serif;font-size:13px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);resize:vertical;min-height:50px;outline:none" oninput="weekNotes=this.value">${weekNotes||''}</textarea></div>`;
+    h += `<div style="margin-top:12px"><textarea id="weekNotes" placeholder="Anmerkungen (optional)..." style="width:100%;font-family:'DM Sans',sans-serif;font-size:13px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);resize:vertical;min-height:50px;outline:none" oninput="setWeekNotes(this.value)">${weekNotes||''}</textarea></div>`;
     h += `<div class="mt12 gap8">
       <button class="btn btn-gold" onclick="doGenerate()">↻ Neu erstellen</button>
       <button class="btn btn-success" onclick="saveWeek()">✓ Woche speichern</button>
@@ -926,6 +970,8 @@ function renderGenerate() {
 window.toggleSelect = function(id) { selected.has(id) ? selected.delete(id) : selected.add(id); currentSeating = null; fixedPairs = fixedPairs.filter(fp => selected.has(fp.a) && selected.has(fp.b)); render(); };
 window.selectAll = function() { state.members.forEach(m => selected.add(m.id)); currentSeating = null; render(); };
 window.selectNone = function() { selected.clear(); currentSeating = null; fixedPairs = []; render(); };
+window.setWeekLabel = function(v) { weekLabel = v; };
+window.setWeekNotes = function(v) { weekNotes = v; };
 window.doGenerate = function() {
   if (selected.size < 2) return;
   // Run algorithm multiple times, pick best result (most Wunschpartner matches)
